@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -10,7 +10,7 @@ const temporary: string[] = []
 const originalOverride = process.env.DSH_LIBREOFFICE_KIT_CLI
 
 function sandbox(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-office-kit-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-office-kit-')))
   temporary.push(root)
   return root
 }
