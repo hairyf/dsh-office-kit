@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
@@ -8,6 +8,18 @@ import { fileURLToPath } from 'node:url'
 export const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 const KIT_CLI = '@deepseek-ai/libreoffice-kit/cli'
+
+/**
+ * Electron reads `app.asar` as a directory but nothing else can, and the helper
+ * runs the recorded path from Python. The packaged app ships the kit unpacked.
+ */
+function outsideAsar(path: string): string {
+  const packed = `${sep}app.asar${sep}`
+  if (!path.includes(packed))
+    return path
+  const unpacked = path.replace(packed, `${sep}app.asar.unpacked${sep}`)
+  return existsSync(unpacked) ? unpacked : path
+}
 
 /**
  * Locate the LibreOffice kit CLI that DeepSeek Harness ships.
@@ -30,7 +42,7 @@ export function resolveKitCli(entry: string | undefined = process.argv[1]): stri
     try {
       const cli = createRequire(anchor).resolve(KIT_CLI)
       if (existsSync(cli))
-        return cli
+        return outsideAsar(cli)
     }
     catch {
       // Not installed at this anchor; try the next one.

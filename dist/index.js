@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 import { BUNDLED_SKILL_RANK } from "@deepseek-ai/dsh-skill";
@@ -55,6 +55,16 @@ const OFFICE_FEATURES = [
 const PACKAGE_ROOT$1 = fileURLToPath(new URL("..", import.meta.url));
 const KIT_CLI = "@deepseek-ai/libreoffice-kit/cli";
 /**
+* Electron reads `app.asar` as a directory but nothing else can, and the helper
+* runs the recorded path from Python. The packaged app ships the kit unpacked.
+*/
+function outsideAsar(path) {
+	const packed = `${sep}app.asar${sep}`;
+	if (!path.includes(packed)) return path;
+	const unpacked = path.replace(packed, `${sep}app.asar.unpacked${sep}`);
+	return existsSync(unpacked) ? unpacked : path;
+}
+/**
 * Locate the LibreOffice kit CLI that DeepSeek Harness ships.
 *
 * DSH installs third-party plugins into a profile (`~/.dsh/profiles/<name>/node_modules`)
@@ -71,7 +81,7 @@ function resolveKitCli(entry = process.argv[1]) {
 		if (anchor == null) continue;
 		try {
 			const cli = createRequire(anchor).resolve(KIT_CLI);
-			if (existsSync(cli)) return cli;
+			if (existsSync(cli)) return outsideAsar(cli);
 		} catch {}
 	}
 	return null;

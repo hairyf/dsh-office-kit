@@ -48,6 +48,15 @@ describe('resolveKitCli', () => {
     expect(resolveKitCli(entry)).toBe(join(root, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
   })
 
+  it('hands out the unpacked copy when the harness runs from app.asar', () => {
+    delete process.env.DSH_LIBREOFFICE_KIT_CLI
+    const root = sandbox()
+    const entry = fakeHarness(join(root, 'app.asar'))
+    expect(resolveKitCli(entry)).toBe(join(root, 'app.asar', 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
+    fakeHarness(join(root, 'app.asar.unpacked'))
+    expect(resolveKitCli(entry)).toBe(join(root, 'app.asar.unpacked', 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
+  })
+
   it('honours DSH_LIBREOFFICE_KIT_CLI before any lookup', () => {
     const root = sandbox()
     const cli = join(root, 'custom-cli.js')
