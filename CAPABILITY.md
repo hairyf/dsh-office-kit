@@ -138,10 +138,11 @@ never guessed.
 | PDF create / read / render / `metadata.py` / `page_ops.py` / `redact_region.py` | ok — CJK font applied, metadata written, merge→remove→rotate, region redaction removed 170 chars and 11 drawings, `page-1.png` produced |
 | Annotation geometry helpers | pymupdf rect conversion, python-pptx overlap scan, A1 text matching run against those files |
 | Forbidden-vocabulary grep over the delivered docs | empty |
+| macOS 26 arm64, DSH 0.2.1-rc.2, `DSH_OFFICE_PYTHON` = Homebrew 3.13 | full vitest suite with `DSH_OFFICE_REQUIRE_RENDERER=1` passes; docx/pptx/xlsx render and xlsx recalc report `engine: native`, also with the app's Electron binary as the recorded node; PDF create/stamp pick STHeiti |
 
 Not claimed (no evidence here): installer or self-heal timings, live GUI
-interaction (`/` menu, chip, sidebar preview, annotation overlay), and macOS
-renderer support.
+interaction (`/` menu, chip, sidebar preview, annotation overlay), and automatic
+Python discovery on macOS (see #23).
 
 ## Explicitly out of scope
 
@@ -152,6 +153,6 @@ renderer support.
   so); OCR and scanned-PDF text extraction.
 - PPTX animations, speaker notes, slide masters; XLSX pivots, macros, data
   validation, conditional formatting — no spec keys or verbs in the helper.
-- Formula evaluation without the DSH LibreOffice kit; macOS/Linux installation
-  was exercised in CI (Linux runs the WASM engine), but only Windows was checked
-  by hand.
+- Formula evaluation without the DSH LibreOffice kit; Linux installation was
+  exercised in CI (Linux runs the WASM engine); Windows and macOS were checked by
+  hand.
