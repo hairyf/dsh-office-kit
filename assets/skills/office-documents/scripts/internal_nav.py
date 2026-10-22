@@ -5,7 +5,9 @@ Word's TOC field needs a refresh before its links work.  This script instead
 writes static hyperlinks that any renderer follows: bookmarks on every heading,
 a contents list at the top (with quick links and back links), and optional
 Top/Bottom anchors.  Because the entries are literal text there is nothing to
-update before the file is read.
+update before the file is read.  Rerunning on a file this script already
+processed strips the previous navigation first, so the output is rebuilt
+cleanly instead of stacking a second contents block.
 
 Exit codes: 0 success, 1 no headings, 2 bad input.
 """
@@ -59,6 +61,63 @@ def paragraph(style: str | None = None):
     return node
 
 
+def _remove_bookmark(node) -> None:
+    """Drop one bookmarkStart and its matching bookmarkEnd wherever they live."""
+    ident = node.get(kit.q("id"))
+    parent = node.getparent()
+    if parent is not None:
+        parent.remove(node)
+    if ident is None:
+        return
+    root = parent if parent is not None else node
+    while root.getparent() is not None:
+        root = root.getparent()
+    for end in list(root.iter(kit.q("bookmarkEnd"))):
+        if end.get(kit.q("id")) == ident:
+            end.getparent().remove(end)
+
+
+def strip_previous_nav(body) -> int:
+    """Remove navigation inserted by an earlier run, so reruns rebuild cleanly.
+
+    Without this, a second run stacks a second contents block, re-collects the
+    first block's title as a chapter, and duplicates the nav_top/nav_toc/
+    nav_bottom bookmark names, which makes every back link resolve to the stale
+    block. A paragraph is treated as generated when it links to a nav_ anchor or
+    carries a structural nav bookmark; a real heading only loses its nav_h
+    bookmarks. Returns the number of paragraphs removed.
+    """
+    removed = 0
+    for paragraph_node in list(body.iter(kit.q("p"))):
+        bookmarks = [
+            node
+            for node in paragraph_node.iter(kit.q("bookmarkStart"))
+            if (node.get(kit.q("name")) or "").startswith("nav_")
+        ]
+        links = [
+            node
+            for node in paragraph_node.iter(kit.q("hyperlink"))
+            if (node.get(kit.q("anchor")) or "").startswith("nav_")
+        ]
+        if not bookmarks and not links:
+            continue
+        generated = bool(links) or any(
+            node.get(kit.q("name")) in (TOP_BOOKMARK, BOTTOM_BOOKMARK, TOC_BOOKMARK)
+            for node in bookmarks
+        )
+        if generated:
+            for node in bookmarks:
+                _remove_bookmark(node)
+            parent = paragraph_node.getparent()
+            if parent is not None:
+                parent.remove(paragraph_node)
+                removed += 1
+        else:
+            for node in bookmarks:
+                _remove_bookmark(node)
+    return removed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Add bookmark anchors and static internal links to headings.")
     parser.add_argument("input_docx", help="Input .docx")
@@ -77,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     body = doc.body()
+    stripped = strip_previous_nav(body)
     headings = []
     ident = doc.next_id()
     for paragraph_node in list(body.iter(kit.q("p"))):
@@ -147,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         body.append(last)
 
     doc.save(args.out)
-    kit.emit({"ok": True, "output": str(Path(args.out)), "headings": headings, "entries": len(block)})
+    kit.emit({"ok": True, "output": str(Path(args.out)), "headings": headings, "entries": len(block), "stripped": stripped})
     return 0
 
 

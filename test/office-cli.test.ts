@@ -532,6 +532,20 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(read('docx', out).paragraphs.some((paragraph: { text: string }) => paragraph.text === 'Back to contents')).toBe(true)
   })
 
+  it('rebuilds navigation idempotently instead of stacking a second block', () => {
+    const file = create('documents', '导航 幂等')
+    const first = join(directory, '导航 一次.docx')
+    const second = join(directory, '导航 二次.docx')
+    const initial = runScript(python!, 'office-documents', 'scripts/internal_nav.py', [file, '--out', first])
+    const rerun = runScript(python!, 'office-documents', 'scripts/internal_nav.py', [first, '--out', second])
+    expect(rerun.ok).toBe(true)
+    expect(rerun.stripped).toBeGreaterThan(0)
+    // The rerun must see only the real chapters, never the previous block's title.
+    expect(rerun.headings.length).toBe(initial.headings.length)
+    const paragraphs = read('docx', second).paragraphs.map((paragraph: { text: string }) => paragraph.text)
+    expect(paragraphs.filter((text: string) => text === 'Table of Contents')).toHaveLength(1)
+  })
+
   it('fits a table to the text width and leaves no finding', () => {
     const file = create('documents', '表格 几何')
     const out = join(directory, '表格 几何-修复.docx')
