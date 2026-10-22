@@ -25,9 +25,9 @@ CJK_FONT_CANDIDATES = {
         "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
     ],
     "darwin": [
-        "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
     ],
 }
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -10,7 +10,7 @@ const temporary: string[] = []
 const originalOverride = process.env.DSH_LIBREOFFICE_KIT_CLI
 
 function sandbox(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-office-kit-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-office-kit-')))
   temporary.push(root)
   return root
 }
@@ -46,6 +46,15 @@ describe('resolveKitCli', () => {
     const root = sandbox()
     const entry = fakeHarness(root)
     expect(resolveKitCli(entry)).toBe(join(root, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
+  })
+
+  it('hands out the unpacked copy when the harness runs from app.asar', () => {
+    delete process.env.DSH_LIBREOFFICE_KIT_CLI
+    const root = sandbox()
+    const entry = fakeHarness(join(root, 'app.asar'))
+    expect(resolveKitCli(entry)).toBe(join(root, 'app.asar', 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
+    fakeHarness(join(root, 'app.asar.unpacked'))
+    expect(resolveKitCli(entry)).toBe(join(root, 'app.asar.unpacked', 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js'))
   })
 
   it('honours DSH_LIBREOFFICE_KIT_CLI before any lookup', () => {

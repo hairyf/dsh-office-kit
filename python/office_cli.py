@@ -184,6 +184,11 @@ def find_kit() -> tuple[str, str] | None:
     return node, str(cli)
 
 
+def _kit_env() -> dict[str, str]:
+    """Environment for a kit run: the recorded node may be the harness's Electron binary."""
+    return {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
+
+
 def _kit_call(arguments: list[str], timeout: int = 300) -> dict[str, Any]:
     """Run one kit command and return its JSON report, failing with the kit's own words."""
     kit = find_kit()
@@ -195,6 +200,7 @@ def _kit_call(arguments: list[str], timeout: int = 300) -> dict[str, Any]:
             [node, cli, *arguments],
             capture_output=True,
             text=True,
+            env=_kit_env(),
             # The kit always speaks UTF-8; the locale code page would mangle CJK paths.
             encoding="utf-8",
             errors="replace",
@@ -231,6 +237,7 @@ def kit_report() -> dict[str, Any]:
             [node, cli, "capabilities", "--json"],
             capture_output=True,
             text=True,
+            env=_kit_env(),
             encoding="utf-8",
             errors="replace",
             timeout=120,
@@ -763,8 +770,9 @@ _PDF_CJK_CANDIDATES = [
     r"C:\Windows\Fonts\msyh.ttf",
     r"C:\Windows\Fonts\simhei.ttf",
     r"C:\Windows\Fonts\simsun.ttc",
-    "/System/Library/Fonts/PingFang.ttc",
     "/System/Library/Fonts/STHeiti Light.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Songti.ttc",
     "/usr/share/fonts/truetype/winfonts/msyh.ttc",
     "/usr/share/fonts/truetype/winfonts/msyhl.ttc",
     "/usr/share/fonts/truetype/winfonts/simhei.ttf",

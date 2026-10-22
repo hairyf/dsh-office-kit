@@ -51,10 +51,10 @@ interface CliStatus {
   }
 }
 
-function runJson(command: string, args: string[]): Record<string, any> {
+function runJson(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Record<string, any> {
   const stdout = execFileSync(command, args, {
     encoding: 'utf8',
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    env: { ...env, PYTHONIOENCODING: 'utf-8' },
     maxBuffer: 8 * 1024 * 1024,
   })
   return JSON.parse(stdout)
@@ -643,5 +643,24 @@ describe.runIf(ready)('kit discovery handoff', () => {
     expect(report.renderers.kit.cli).toBe(kitCli)
     const without = JSON.parse(execFileSync(python!, [helper, 'status'], { encoding: 'utf8', env: { ...isolated, DSH_OFFICE_CONFIG: join(root, 'missing.json') } }))
     expect(without.renderers.kit.available).toBe(false)
+  }, 60_000)
+
+  it.runIf(process.platform !== 'win32')('runs the recorded node as plain node even when it is the Electron binary', () => {
+    // The host records `process.execPath`, which inside the desktop app is Electron;
+    // without ELECTRON_RUN_AS_NODE it starts the GUI and prints nothing.
+    const root = mkdtempSync(join(tmpdir(), 'dsh office electron '))
+    const node = join(root, 'electron')
+    writeFileSync(node, '#!/bin/sh\nprintf \'{"runtime":{"backend":"probe","version":"%s"}}\' "$ELECTRON_RUN_AS_NODE"\n', { mode: 0o755 })
+    const cli = join(root, 'cli.js')
+    writeFileSync(cli, '')
+    const config = join(root, 'config.json')
+    writeFileSync(config, JSON.stringify({ libreofficeKit: { node, cli } }))
+    const env: NodeJS.ProcessEnv = { ...process.env, DSH_OFFICE_CONFIG: config, HOME: join(root, 'home'), XDG_CONFIG_HOME: join(root, 'xdg') }
+    delete env.DSH_LIBREOFFICE_KIT_CLI
+    delete env.ELECTRON_RUN_AS_NODE
+    const report = runJson(python!, [officePaths().cli, 'status'], env)
+    expect(report.renderers.kit.backend).toBe('probe')
+    expect(report.renderers.kit.version).toBe('1')
+    rmSync(root, { recursive: true, force: true })
   }, 60_000)
 })
