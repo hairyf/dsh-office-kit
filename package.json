@@ -30,12 +30,14 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "icon": "./icon.svg",
   "files": [
     "CAPABILITY.md",
     "README.md",
     "assets",
     "cordis.patch.yml",
     "dist",
+    "icon.svg",
     "postinstall.mjs",
     "python"
   ],
