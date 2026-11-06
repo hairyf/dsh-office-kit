@@ -46,8 +46,11 @@ The four routers register through `ctx.skills.registerProvider` in
 - **DOCX** — create from a block spec: headings, paragraphs, bullets, numbered
   lists, tables, images, LaTeX equations (OMML, fallbacks counted in
   `equation_fallbacks`), quotes, page breaks, spacers, header/footer, page size,
-  margins. Read returns styled text, tables, images, equations, counts. Edits run
-  as pack scripts (text replacement, block append, core properties).
+  margins, and an optional `font` family shared by Western, East Asian and
+  complex-script text. Heading styles stay consistent when later extended. Headings
+  and titles are black. Read returns styled text,
+  tables, images, equations, counts. Edits run as pack scripts (text replacement
+  preserving run formatting, block append, core properties).
 - **PDF** — create with reportlab; the CJK font is auto-detected (named in the
   report, e.g. `OfficeCJK`). Read returns page text, metadata, word counts and
   form fields; OCR is not bundled (`ocr.available: false`). Edits run as pack

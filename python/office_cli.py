@@ -631,13 +631,83 @@ def _docx_add_blocks(document, blocks: Iterable[dict[str, Any]], counters: dict[
             _docx_add_block(document, block, counters)
 
 
+def _docx_set_font(properties, family: str) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    fonts = properties.get_or_add_rFonts()
+    # Theme attributes take precedence over literal font names in Word.
+    for attribute in list(fonts.attrib):
+        if attribute.lower().endswith("theme"):
+            del fonts.attrib[attribute]
+    for slot in ("ascii", "hAnsi", "eastAsia", "cs"):
+        fonts.set(qn(f"w:{slot}"), family)
+    language = properties.find(qn("w:lang"))
+    if language is None:
+        language = OxmlElement("w:lang")
+        properties.append(language)
+    language.set(qn("w:eastAsia"), "zh-CN")
+
+
+def _docx_normalize_styles(document, family: str) -> None:
+    from docx.oxml.ns import qn
+
+    styles = document.styles.element
+    defaults = styles.find(qn("w:docDefaults")).find(qn("w:rPrDefault")).find(qn("w:rPr"))
+    _docx_set_font(defaults, family)
+    normal = document.styles["Normal"].element
+    _docx_set_font(normal.get_or_add_rPr(), family)
+
+    # Normalize used styles and headings for content appended after creation.
+    headings = {"Title", "TitleChar"} | {
+        f"Heading{level}{suffix}" for level in range(1, 10) for suffix in ("", "Char")
+    }
+    roots = [document.element]
+    roots.extend(
+        part.element for part in document.part.related_parts.values()
+        if str(part.partname).startswith(("/word/header", "/word/footer"))
+    )
+    used = {"Normal"} | headings
+    for root in roots:
+        for node in root.iter(qn("w:pStyle"), qn("w:rStyle"), qn("w:tblStyle")):
+            used.add(node.get(qn("w:val")))
+    by_id = {style.get(qn("w:styleId")): style for style in styles.findall(qn("w:style"))}
+    pending = list(used)
+    while pending:
+        style = by_id[pending.pop()]
+        for tag in ("w:basedOn", "w:link"):
+            reference = style.find(qn(tag))
+            if reference is not None:
+                target = reference.get(qn("w:val"))
+                if target not in used:
+                    used.add(target)
+                    pending.append(target)
+
+    for style_id in used:
+        style = by_id[style_id]
+        for fonts in style.iter(qn("w:rFonts")):
+            _docx_set_font(fonts.getparent(), family)
+        for language in style.iter(qn("w:lang")):
+            language.set(qn("w:eastAsia"), "zh-CN")
+        if style_id in headings:
+            color = style.get_or_add_rPr().get_or_add_color()
+            color.attrib.clear()
+            color.set(qn("w:val"), "000000")
+        if style_id == "Title":
+            for border in style.xpath("./w:pPr/w:pBdr"):
+                border.getparent().remove(border)
+
+
 def docx_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     from docx import Document
     from docx.shared import Pt
 
+    family = spec.get("font", "Calibri")
+    if not isinstance(family, str) or not family.strip():
+        fail("font must be a non-empty font family string")
+    family = family.strip()
     document = Document()
     style = document.styles["Normal"]
-    style.font.name = "Calibri"
     style.font.size = Pt(11)
     section = document.sections[0]
     page_size = str(spec.get("page_size", "Letter")).lower()
@@ -670,6 +740,7 @@ def docx_create(spec: dict[str, Any], out: Path) -> dict[str, Any]:
 
     counters = {key: 0 for key in ("headings", "paragraphs", "list_items", "tables", "images", "equations", "equation_fallbacks")}
     _docx_add_blocks(document, spec.get("blocks", spec.get("sections", [])), counters)
+    _docx_normalize_styles(document, family)
     ensure_parent(str(out))
     document.save(str(out))
     return {"ok": True, "kind": "docx", "command": "create", "output": str(out), "counts": counters}
