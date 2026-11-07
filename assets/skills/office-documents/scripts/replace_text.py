@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Replace text in a Word document without touching the original.
 
-Pairs run inside single runs first; when a match straddles runs the paragraph
-text is rewritten into its first run, so ordinary prose survives intact and a
-paragraph that mixes formats collapses. Body, tables, and every section header
-and footer are covered.
+Only changed spans are rewritten, preserving the original text nodes and run
+formatting even when a match straddles runs. Changed text uses the formatting
+at the start of its span. Body, tables, and every section header and footer
+are covered.
 
 Usage:
   replace_text.py --input IN.docx [--out OUT.docx] --find OLD --replace NEW [--find ...]
@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from difflib import SequenceMatcher
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,26 +42,46 @@ def paragraph_text_nodes(paragraph) -> list:
 
 
 def replace_in_paragraph(paragraph, find: str, replacement: str) -> int:
-    nodes = paragraph_text_nodes(paragraph)
-    if not nodes:
+    if not find:
         return 0
-    count = 0
-    for node in nodes:
+    ranges = []
+    joined = ""
+    for node in paragraph_text_nodes(paragraph):
         text = node.text or ""
-        if find in text:
-            hits = text.count(find)
-            node.text = text.replace(find, replacement)
-            count += hits
-    if count:
-        return count
-    joined = "".join(node.text or "" for node in nodes)
-    if find not in joined:
+        if text:
+            ranges.append((node, len(joined), len(joined) + len(text)))
+            joined += text
+    matches = []
+    offset = joined.find(find)
+    while offset != -1:
+        matches.append(offset)
+        offset = joined.find(find, offset + len(find))
+    if not matches:
         return 0
-    hits = joined.count(find)
-    nodes[0].text = joined.replace(find, replacement)
-    for node in nodes[1:]:
-        node.text = ""
-    return hits
+
+    changes = [opcode for opcode in SequenceMatcher(
+        None, find, replacement, autojunk=False
+    ).get_opcodes() if opcode[0] != "equal"]
+    # All offsets refer to the original text. Working backwards also prevents
+    # inserted text from being matched again during this replacement pair.
+    for offset in reversed(matches):
+        for _, old_start, old_end, new_start, new_end in reversed(changes):
+            start, end = offset + old_start, offset + old_end
+            first = next((i for i, (_, _, stop) in enumerate(ranges)
+                          if stop > start), len(ranges) - 1)
+            for i in range(first, len(ranges)):
+                node, node_start, node_end = ranges[i]
+                if i != first and node_start >= end:
+                    break
+                text = node.text or ""
+                left = max(0, start - node_start)
+                right = min(node_end, end) - node_start
+                node.text = (text[:left]
+                             + (replacement[new_start:new_end] if i == first else "")
+                             + text[right:])
+                if node.text and (node.text[0].isspace() or node.text[-1].isspace()):
+                    node.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    return len(matches)
 
 
 def iter_paragraphs(document):

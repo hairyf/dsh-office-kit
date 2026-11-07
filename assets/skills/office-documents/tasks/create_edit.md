@@ -29,6 +29,8 @@ Write a JSON spec next to the output, then run:
 }
 ```
 
+The optional top-level `font` string sets the same family for Western, East Asian and complex-script text (for example, `"font": "Microsoft YaHei"`). The default is `Calibri`; choose an installed family with the glyph coverage your document needs. Body, headings, lists, tables, headers and footers share this family. Heading styles are prepared even when unused, so later `append_blocks.py` headings keep the same family. Headings and titles are black, and East Asian language metadata is `zh-CN`. Native equations keep their math font.
+
 Block types and keys: `heading` (`level`, `text`), `paragraph` (`text`, `bold`, `italic`, `size`, `color`, `align`, `style`), `bullets` / `numbered` (`items`), `table` (`headers`, `rows`, optional `style`, default `Table Grid`), `image` (`path`, optional `width` in inches), `equation` (`latex`), `quote`, `page_break`, `spacer`. Page keys: `page_size` (`Letter` or `A4`), `orientation`, and `top_margin` / `bottom_margin` / `left_margin` / `right_margin` in inches.
 
 The command prints counts for headings, paragraphs, list items, tables, images and equations. Check `equation_fallbacks`: a non-zero value means some LaTeX was emitted as styled text instead of OMML.
@@ -44,7 +46,7 @@ Replace text — body, tables, and every header and footer:
   --find "18%" --replace "21%" --find "Hardware flat" --replace "Hardware steady"
 ```
 
-`--find` / `--replace` pair up in order; `--spec edits.json` takes `{"replace": [{"find": "...", "replace": "..."}]}` instead. The command prints a count per pair. A match inside one run keeps that run's formatting; a match straddling runs collapses the paragraph into its first run, so keep needles inside a single styled span when formatting matters. `--require-all` exits 1 if a pair matched nothing — the check for a scripted edit.
+`--find` / `--replace` pair up in order; `--spec edits.json` takes `{"replace": [{"find": "...", "replace": "..."}]}` instead. The command prints a count per pair. Matches preserve existing run formatting, including unchanged text on either side of a replacement. Within a cross-run match, unchanged text keeps its original run; inserted or changed text inherits the formatting at the start of that changed span (an insertion at a run boundary uses the following run, or the preceding run at the paragraph end). `--require-all` exits 1 if a pair matched nothing — the check for a scripted edit.
 
 Append blocks — the same block types `docx create` accepts:
 
@@ -74,19 +76,14 @@ Set properties:
 | Edit inside a header, footer, footnote or comment | `docx_kit.py xml <file> <part>` to inspect, then the snippet below |
 | Mark edits as tracked changes | `add_tracked_replacements.py` (`tasks/clean_tracked_changes.md`) |
 | Header date, footer page numbers, first hyperlink | `docx_ooxml_patch.py` |
-| Replace a paragraph but keep its formatting | `python-docx` snippet below |
+| Replace text across styled runs | `replace_text.py` above |
 
 ```bash
 "<python>" - <<'PY'
 from docx import Document
 d = Document(r"<file.docx>")
-for p in d.paragraphs:
-    if "18%" in p.text:
-        runs = p.runs or [p.add_run()]
-        runs[0].text = p.text.replace("18%", "21%")
-        for r in runs[1:]:
-            r.text = ""
-        break
+# Structural edits use python-docx; text substitutions use replace_text.py above.
+d.sections[0].header.paragraphs[0].add_run(" — Reviewed")
 d.save(r"<file-edited.docx>")
 PY
 ```

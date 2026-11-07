@@ -211,6 +211,128 @@ describe.runIf(ready)('office CLI integration', () => {
     expect(result.equations).toBe(1)
   })
 
+  it.each([undefined, 'Microsoft YaHei'])('uses consistent DOCX fonts and black headings (font: %s)', (font) => {
+    const report = runJson(python!, ['-B', '-c', String.raw`
+import json, subprocess, sys
+from pathlib import Path
+from zipfile import ZipFile
+from lxml import etree
+from docx import Document
+
+cli, directory, family, image = sys.argv[1:]
+expected = family or "Calibri"
+root = Path(directory)
+spec = {
+    "title": "标题 Title", "subtitle": "副标题 Subtitle", "header": "页眉 Header", "footer": "页脚 Footer",
+    "blocks": [
+        *[{"type": "heading", "level": level, "text": f"标题 Heading {level}"} for level in range(10)],
+        {"type": "paragraph", "text": "正文 Body"},
+        {"type": "paragraph", "text": "强调 Emphasis", "bold": True, "italic": True, "color": "CC0000"},
+        {"type": "paragraph", "text": "样式 Subtitle", "style": "Subtitle"},
+        {"type": "paragraph", "text": "题注 Caption", "style": "Caption"},
+        {"type": "bullets", "items": ["项目 Bullet"]},
+        {"type": "numbered", "items": ["步骤 Number"]},
+        {"type": "table", "headers": ["表头 Header"], "rows": [["单元格 Cell"]]},
+        {"type": "table", "style": "Light Shading Accent 1", "headers": ["样式表头 Styled"], "rows": [["样式单元格 Cell"]]},
+        {"type": "quote", "text": "引用 Quote"},
+        {"type": "image", "path": image, "width": 0.1},
+        {"type": "equation", "latex": r"\frac{a^2+b^2}{c^2}"},
+        {"type": "page_break"}, {"type": "spacer"}, {"type": "unknown", "text": "回退 Fallback"},
+    ],
+}
+if family:
+    spec["font"] = family
+spec_path, out = root / "font-spec.json", root / "font-check.docx"
+spec_path.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+created = subprocess.run([sys.executable, "-B", cli, "docx", "create", "--spec", str(spec_path), "--out", str(out)], capture_output=True, text=True, encoding="utf-8")
+assert created.returncode == 0, created.stderr
+result = json.loads(created.stdout)
+assert result["ok"] and result["counts"]["equations"] == 1, result
+ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+w = "{" + ns["w"] + "}"
+with ZipFile(out) as package:
+    styles_root = etree.fromstring(package.read("word/styles.xml"))
+    parts = [etree.fromstring(package.read(name)) for name in package.namelist() if name == "word/document.xml" or name.startswith(("word/header", "word/footer")) and name.endswith(".xml")]
+    settings = etree.fromstring(package.read("word/settings.xml"))
+styles = {style.get(w + "styleId"): style for style in styles_root.findall("w:style", ns)}
+def assert_font(fonts, label):
+    assert fonts is not None, f"{label}: missing explicit rFonts"
+    for slot in ("ascii", "hAnsi", "eastAsia", "cs"):
+        assert fonts.get(w + slot) == expected, f"{label}: {slot}={fonts.get(w + slot)!r}, expected {expected!r}"
+    assert not any("theme" in etree.QName(key).localname.lower() for key in fonts.attrib), f"{label}: conflicting font theme"
+defaults = styles_root.find("w:docDefaults/w:rPrDefault/w:rPr", ns)
+assert_font(defaults.find("w:rFonts", ns), "docDefaults")
+assert defaults.find("w:lang", ns).get(w + "eastAsia") == "zh-CN"
+assert_font(styles["Normal"].find("w:rPr/w:rFonts", ns), "Normal")
+assert styles["Normal"].find("w:rPr/w:lang", ns).get(w + "eastAsia") == "zh-CN"
+used = {"Normal"}
+for part in parts:
+    used.update(node.get(w + "val") for node in part.xpath(".//w:pStyle | .//w:rStyle | .//w:tblStyle", namespaces=ns))
+pending = list(used)
+while pending:
+    style = styles[pending.pop()]
+    for node in style.xpath("./w:basedOn | ./w:link", namespaces=ns):
+        target = node.get(w + "val")
+        if target not in used:
+            used.add(target)
+            pending.append(target)
+for name in used:
+    for fonts in styles[name].findall(".//w:rFonts", ns):
+        assert_font(fonts, name)
+    for lang in styles[name].findall(".//w:lang", ns):
+        assert lang.get(w + "eastAsia", "zh-CN") == "zh-CN", name
+for name in ["Title", "TitleChar", *[f"Heading{level}{suffix}" for level in range(1, 10) for suffix in ("", "Char")]]:
+    color = styles[name].find("w:rPr/w:color", ns)
+    assert color is not None and dict(color.attrib) == {w + "val": "000000"}, f"{name}: heading colour still themed"
+assert styles["Title"].find("w:pPr/w:pBdr", ns) is None
+body = parts[0]
+assert len(body.findall(".//m:oMath", ns)) == 1
+assert settings.find("m:mathPr/m:mathFont", ns).get("{" + ns["m"] + "}val") == "Cambria Math"
+assert not body.findall(".//m:oMath//w:rFonts", ns), "native math font must remain independent"
+emphasis = body.xpath(".//w:r[w:t='强调 Emphasis']/w:rPr", namespaces=ns)[0]
+assert emphasis.find("w:b", ns) is not None and emphasis.find("w:i", ns) is not None
+assert emphasis.find("w:color", ns).get(w + "val") == "CC0000"
+assert body.find(".//w:tbl/w:tr/w:tc/w:p/w:r/w:rPr/w:b", ns) is not None
+original = Document().styles.element
+for name in ("IntenseQuote", "Caption", "MacroText"):
+    baseline = original.xpath(f"./w:style[@w:styleId='{name}']")[0]
+    # Preserve quote/caption emphasis and the unused monospace style.
+    assert etree.tostring(styles[name]) == etree.tostring(baseline), name
+# A minimal spec prepares headings for content appended later.
+spec["blocks"] = [{"type": "paragraph", "text": "正文 Body"}]
+for key in ("title", "subtitle", "header", "footer"):
+    spec.pop(key)
+spec_path.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+minimal = subprocess.run([sys.executable, "-B", cli, "docx", "create", "--spec", str(spec_path), "--out", str(root / "minimal.docx")], capture_output=True, text=True, encoding="utf-8")
+assert minimal.returncode == 0, minimal.stderr
+with ZipFile(root / "minimal.docx") as package:
+    minimal_styles = etree.fromstring(package.read("word/styles.xml"))
+minimal_style_map = {style.get(w + "styleId"): style for style in minimal_styles.findall("w:style", ns)}
+for name in ("Title", "TitleChar", *[f"Heading{level}{suffix}" for level in range(1, 10) for suffix in ("", "Char")]):
+    style = minimal_style_map[name]
+    assert_font(style.find("w:rPr/w:rFonts", ns), name)
+    color = style.find("w:rPr/w:color", ns)
+    assert color is not None and color.get(w + "val") == "000000", name
+assert minimal_style_map["Title"].find("w:pPr/w:pBdr", ns) is None
+baseline = original.xpath("./w:style[@w:styleId='MacroText']")[0]
+assert etree.tostring(minimal_style_map["MacroText"]) == etree.tostring(baseline)
+
+appended_out = root / "appended.docx"
+append_script = Path(cli).parents[1] / "assets" / "skills" / "office-documents" / "scripts" / "append_blocks.py"
+subprocess.run([sys.executable, "-B", str(append_script), "--input", str(root / "minimal.docx"), "--blocks", json.dumps([{"type": "heading", "level": 1, "text": "追加标题 Appended heading"}], ensure_ascii=False), "--out", str(appended_out)], check=True, capture_output=True, text=True, encoding="utf-8")
+with ZipFile(appended_out) as package:
+    appended_styles = etree.fromstring(package.read("word/styles.xml"))
+appended_style_map = {style.get(w + "styleId"): style for style in appended_styles.findall("w:style", ns)}
+assert_font(appended_style_map["Heading1"].find("w:rPr/w:rFonts", ns), "appended Heading1")
+assert appended_style_map["Heading1"].find("w:rPr/w:color", ns).get(w + "val") == "000000"
+assert Document(appended_out).paragraphs[-1].style.style_id == "Heading1"
+print(json.dumps({"ok": True, "font": expected, "used_styles": sorted(used)}))
+`, officePaths().cli, directory, font ?? '', image])
+    expect(report.ok).toBe(true)
+    expect(report.font).toBe(font ?? 'Calibri')
+    expect(report.used_styles).toEqual(expect.arrayContaining(['Title', 'Heading1', 'Heading9', 'Header', 'Footer', 'Caption', 'IntenseQuote', 'TableGrid', 'ListBullet', 'ListNumber', 'Subtitle']))
+  })
+
   it('edits DOCX text and appends a heading through the pack scripts', () => {
     const file = create('documents', '季度 报告-编辑前')
     const replaced = join(directory, '季度 报告-替换.docx')

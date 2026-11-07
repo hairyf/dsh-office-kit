@@ -63,6 +63,7 @@ Where no verb exists, use the listed script or a short `python-docx`/`lxml` snip
 ## Document defaults
 
 - Letter 8.5×11 portrait (A4 when the user or template says so), 1in margins, body 11–12pt, single column.
+- `docx create` accepts an optional top-level `"font": "Microsoft YaHei"` family string; omit it to retain Calibri. The selected family applies consistently to Western, East Asian and complex-script text through document defaults and styles used by generated blocks, with East Asian language `zh-CN`. Choose an installed font with the glyph coverage the content needs; the helper does not install or embed fonts. Native equations retain their math font.
 - Black headings and body; colour only for deliberate emphasis, links and chart series.
 - Tables: `#D9D9D9` borders, bold header row, `w:tblHeader` repeat, no vertical merges in wide tables.
 - No callout boxes, drop shadows or coloured sidebars — structure comes from headings, lists and tables.
